@@ -12,6 +12,7 @@ use axum::{
     Json, Router,
 };
 use axum_macros;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tower_http::services::ServeFile;
 
@@ -71,7 +72,7 @@ async fn hello(headers: HeaderMap) -> Response {
 }
 
 async fn posts(headers: HeaderMap, state: State<AppState>) -> Response {
-    let content_type = get_header_value(&headers, "Accept").unwrap_or("application/json".into());
+    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/plain".into());
 
     let mut output = String::new();
 
@@ -114,23 +115,23 @@ async fn user_post(headers: HeaderMap, state: State<AppState>, body: String) -> 
     let Some(auth) = get_header_value(&headers, "Authorization").map(|s| String::from(s)) else {
         return response::Builder::new()
             .status(401)
-            .body(().into())
+            .body("Authorization required".into())
             .unwrap();
     };
 
-    let mut user_data = state.tracked_users.lock().expect("poisoned data lock");
+    let user_data = state.tracked_users.lock().expect("poisoned data lock");
     let mut post_data = state.posts.lock().expect("poisoned data lock");
 
-    let Some(user) = user_data.iter().find(|user| user.token == auth) else {
+    let Some(user) = user_data.iter().find(|user| user.token.eq(&auth)) else {
         return response::Builder::new()
             .status(401)
-            .body(().into())
+            .body("Invalid Authorization".into())
             .unwrap();
     };
 
     post_data.push(Post {
         poster: user.username.clone(),
-        contents: body,
+        contents: req.message,
     });
 
     response::Builder::new()
@@ -143,7 +144,7 @@ async fn register(state: State<AppState>, body: String) -> Response {
     let Ok(req) = serde_json::from_str::<LoginRequest>(body.as_str()) else {
         return response::Builder::new()
             .status(400)
-            .body(().into())
+            .body("Request failed to parse".into())
             .unwrap();
     };
 
@@ -156,7 +157,8 @@ async fn register(state: State<AppState>, body: String) -> Response {
             .unwrap();
     }
 
-    let token: String = (0..10).map(|_| rand::random::<char>()).collect();
+    let token: String = base64::prelude::BASE64_STANDARD
+        .encode((0..10).map(|_| rand::random::<u8>()).collect::<Vec<u8>>());
 
     data.push(User {
         username: req.username.clone(),
@@ -177,11 +179,41 @@ async fn register(state: State<AppState>, body: String) -> Response {
         .unwrap()
 }
 
-async fn login(body: String) -> Response {
-    response::Builder::new()
-        .status(501)
-        .body(().into())
-        .unwrap()
+async fn login(state: State<AppState>, body: String) -> Response {
+    let Ok(req) = serde_json::from_str::<LoginRequest>(body.as_str()) else {
+        return response::Builder::new()
+            .status(400)
+            .body("Request failed to parse".into())
+            .unwrap();
+    };
+
+    let mut data = state.tracked_users.lock().expect("poisoned data lock");
+
+    let Some(user) = data.iter().find(|user| user.username == req.username) else {
+        return response::Builder::new()
+            .status(401)
+            .body("User not found".into())
+            .unwrap();
+    };
+
+    if (user.password == req.password) {
+        return response::Builder::new()
+            .status(200)
+            .body(
+                serde_json::to_string(&LoginResponse {
+                    username: req.username,
+                    token: user.token.clone(),
+                })
+                .unwrap()
+                .into(),
+            )
+            .unwrap();
+    } else {
+        return response::Builder::new()
+            .status(401)
+            .body("Invalid credentials".into())
+            .unwrap();
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -201,7 +233,7 @@ struct Post {
     contents: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct User {
     username: String,
     password: String,
