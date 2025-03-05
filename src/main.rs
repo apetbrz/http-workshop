@@ -43,10 +43,10 @@ async fn main() {
 async fn hello(headers: HeaderMap) -> Response {
     let name = get_header_value(&headers, "User-Agent").unwrap_or("world".into());
 
-    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/html".into());
+    let content_type: Vec<Box<str>> = get_header_value(&headers, "Accept").unwrap_or("text/html".into()).split(",").map(|s| s.into()).collect();
 
-    match &*content_type {
-        "text/html" => format!("<p>Hello, {}!</p>", name).into_response(),
+    match &*content_type[0] {
+        "text/html" => Html::from(format!("<p>Hello, {}!</p>", name)).into_response(),
         "text/plain" => format!("Hello, {}!", name).into_response(),
         "application/json" => Json(Message {
             message: format!("Hello, {}!", name),
@@ -54,19 +54,19 @@ async fn hello(headers: HeaderMap) -> Response {
         .into_response(),
         _ => response::Builder::new()
             .status(400)
-            .body(Body::from(()))
+            .body("Unsupported media type requested".into())
             .unwrap(),
     }
 }
 
 async fn posts(headers: HeaderMap, state: State<AppState>) -> Response {
-    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/html".into());
+    let content_type: Vec<Box<str>> = get_header_value(&headers, "Accept").unwrap_or("text/html".into()).split(",").map(|s| s.into()).collect();
 
     let mut output = String::new();
 
     let data = state.posts.lock().expect("poisoned data lock");
 
-    match &*content_type {
+    match &*content_type[0] {
         "text/html" => {
             for p in &*data {
                 output += format!(
@@ -75,7 +75,7 @@ async fn posts(headers: HeaderMap, state: State<AppState>) -> Response {
                 )
                 .as_str();
             }
-            output.into_response()
+            Html::from(output).into_response()
         }
         "text/plain" => {
             for p in &*data {
@@ -86,7 +86,7 @@ async fn posts(headers: HeaderMap, state: State<AppState>) -> Response {
         "application/json" => Json(&*data).into_response(),
         _ => response::Builder::new()
             .status(400)
-            .body(().into())
+            .body("Unsupported media type requested".into())
             .unwrap(),
     }
 }
