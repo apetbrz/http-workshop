@@ -24,20 +24,8 @@ async fn main() {
     };
 
     state.posts.lock().expect("").push(Post {
-        poster: "example1".into(),
+        poster: "example".into(),
         contents: "hello, world!".into(),
-    });
-    state.posts.lock().expect("").push(Post {
-        poster: "example2".into(),
-        contents: "greetings, earth!".into(),
-    });
-    state.posts.lock().expect("").push(Post {
-        poster: "example3".into(),
-        contents: "howdy, land!".into(),
-    });
-    state.posts.lock().expect("").push(Post {
-        poster: "example4".into(),
-        contents: "hey".into(),
     });
 
     let app = Router::new()
@@ -55,7 +43,7 @@ async fn main() {
 async fn hello(headers: HeaderMap) -> Response {
     let name = get_header_value(&headers, "User-Agent").unwrap_or("world".into());
 
-    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/plain".into());
+    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/html".into());
 
     match &*content_type {
         "text/html" => format!("<p>Hello, {}!</p>", name).into_response(),
@@ -72,7 +60,7 @@ async fn hello(headers: HeaderMap) -> Response {
 }
 
 async fn posts(headers: HeaderMap, state: State<AppState>) -> Response {
-    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/plain".into());
+    let content_type = get_header_value(&headers, "Accept").unwrap_or("text/html".into());
 
     let mut output = String::new();
 
